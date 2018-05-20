@@ -1,0 +1,1304 @@
+% Created 2018-02-29 
+% Modified 2018-04-15
+\documentclass[11pt]{article}
+\usepackage[a4paper,portrait,textwidth=18cm]{geometry}
+\usepackage[english]{babel}
+\usepackage[titletoc]{appendix}
+\setcounter{secnumdepth}{2}
+
+%% INCLUDE FOLLOWING BLOCK FOR BIBLIOGRAPHY
+\RequirePackage[style=authoryear,
+useprefix=true,
+block=space,
+backend=biber]{biblatex}
+\renewcommand*{\bibopenparen}{[}
+\renewcommand*{\bibcloseparen}{]}
+\renewcommand*{\finalandcomma}{,}
+\renewcommand*{\finalnamedelim}{, and~}
+\renewcommand*\bibnamedash{\rule[0.48ex]{3em}{0.14ex}\space}
+\addbibresource{117227009-117227027.bib} 
+\RequirePackage{listings}
+\lstset{language=R}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+{\scshape\LARGE University College Cork\par}
+\vspace{1cm}
+{\scshape\Large Data Mining - CS6405 \par}
+\vspace{1.5cm}
+{\huge\bfseries Titanic dataset\par}  
+\vspace{0.5cm}
+{\Large\bfseries Explore, Clean, Visualise \par}
+\vspace{2cm}
+{\Large\itshape Ashwini Iral Barboza \&\ Dhanya Sringeri Jayachandra \par}
+\vfill
+supervised by\par
+Dr. Marc Van Dongen
+\vfill
+{\large \today\par}
+\end{titlepage}
+
+\clearpage
+\setcounter{tocdepth}{2}
+\tableofcontents
+\clearpage
+\listoftables
+\listoffigures
+\clearpage
+
+<<setup-knitr,echo=FALSE,warning=FALSE,message=FALSE>>=
+packages <- c("knitr", "mice","VIM","randomForest","dplyr","magrittr",
+              "ggvis","ggplot2","scales","rpart","rattle","rpart.plot","RColorBrewer",
+              "party","caret","ggthemes","ISLR","MASS","e1071","tree")
+
+new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(knitr)
+library(mice)
+library(VIM)
+library(randomForest)
+library(dplyr)
+library(magrittr)
+library(ggvis)
+library(ggplot2)
+library(ggthemes)
+library(scales)
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(MASS)
+library( e1071 )
+library(tree)
+library(ISLR)
+library(caret)
+@
+
+<<define-path,results='hide',echo=FALSE>>=
+data_dir <- file.path('.', 'data')
+outpath <- file.path(data_dir, 'processed', 'TitanicPrediction.csv')
+csvpath <- file.path(data_dir, 'external', 'train.csv')
+@
+
+<<load-file,results='hide',echo=FALSE>>=
+titanic <- read.csv(csvpath, header=TRUE,stringsAsFactors=FALSE)
+@ 
+
+\section{Introduction}
+RMS Titanic was a British Passenger Liner which sank in the Atlantic ocean
+during its maiden voyage from the UK to New York City after colliding with
+an iceberg[\cite{wiki:RMSTitanic}]. The analysis attempts to predict the probability for survival
+of the 891 Titanic passengers and analyse main factors that could lead to the
+survival of a specific person .In order to do this, we used the different 
+features available about the passengers, used a subset of the data to train 
+an algorithm and then run the algorithm on the rest of the data set to get 
+a prediction.
+
+\subsection{Variables}
+Titanic Dataset consits of 12 variables as shown in Table~\ref{tab:tab1}.
+\begin{table}[ht]
+\begin{center}
+\begin{tabular}{| c |c |c |}
+\hline
+\textbf{Variable Name}  & \textbf{Description} \\
+\hline
+PassengerId &	Passenger Identifier\\
+\hline
+Survived &	Survived (1) or died (0)\\
+\hline
+Pclass &	Passenger's class\\
+\hline
+Name &	Passenger's name\\
+\hline
+Sex &	Passenger's sex\\
+\hline
+Age	& Passenger's age\\
+\hline
+SibSp & Number of siblings/spouses aboard\\
+\hline
+Parch	& Number of parents/children aboard\\
+\hline
+Ticket & Ticket number\\
+\hline
+Fare & Fare\\
+\hline
+Cabin	& Cabin\\
+\hline
+Embarked & Port of embarkation\\
+\hline
+\end{tabular}
+\end{center}
+\caption{Titanic Variables}
+\label{tab:tab1}
+\end{table}
+
+\subsubsection{Data Frame}
+The titanic Dataset has 12 Variables with 891 passengers(Observations).
+The data is in .csv file.
+
+<<dataframe-table,echo=FALSE>>=
+VariableName = c('PassengerId','Survived','Pclass','Name','Sex','Age','SibSp',
+                 'Parch','Ticket','Fare','Cabin','Embarked')
+ClassType = c('integer','integer','integer','character','character','numeric',
+              'integer','integer','character','numeric','character','character')
+Size=c(891,2,3,891,2,89,7,7,681,248,148,4)
+Context=c('predictors','output','predictors','predictors','predictors',
+          'predictors','predictors','predictors','predictors','predictors',
+          'predictors','predictors')
+df <- data.frame(VariableName,ClassType,Size,Context)
+@
+
+<<data-variables>>=
+df
+@
+
+\section{Exploratory Data Analysis}
+We first explore the relationship of the variables with the response \texttt{Survived}. 
+The added benefit of these plots is to see quickly if the number of passengers
+for each variables are more or less consistent.\\
+
+\subsubsection{Pclass}
+This can be considered as the social status of the passenger i.e. 1st class
+passenger are probably wealthier than the passengers from 3rd class. We can see
+that the many passengers in \texttt{Pclass}1 survived, so did about half 
+of the people from \texttt{Pclass}2. Majority of people were from \texttt{Pclass}3
+and it is evident from Figure~\ref{fig:pclass-relationship-plot} that they had 
+lower survival rate.
+<<pclass-passngers,echo=FALSE>>=
+data.frame(
+  class = factor(c('1st class', '2nd class', '3rd class')),
+  passengers = c(count(titanic[titanic$Pclass == 1,])$n,
+                 count(titanic[titanic$Pclass == 2,])$n,
+                 count(titanic[titanic$Pclass == 3,])$n)
+)
+@
+
+\subsubsection{Passenger Name}
+Additional information can be fetched from the \texttt{Passenger Name}. The
+passengers have titles in their Names, which can be used to predict the survived
+passengers.
+<<titles,echo=FALSE>>=
+titanic$Title <- gsub('(.*, )|(\\..*)', '', titanic$Name)
+tab <- table(titanic$Sex, titanic$Title)
+tab
+titleCol <- ncol(tab)
+@
+It can be seen that there are \Sexpr{titleCol} titles among the passengers.
+
+\subsubsection{Sex}
+From Figure~\ref{fig:sex-relationship-plot}, it is evident that women have higher
+chances of survival than male.
+
+\subsubsection{Age}
+Figure~\ref{fig:age-relationship-plot} indicates that \texttt{Age} 
+is an important factor in predicting the survival of an passenger. There are 
+few missing values which needs to be filled.
+
+\subsubsection{Number of Siblings/Spouses Aboard}
+This variable suggests if the passenger has a sibling onboard.
+Figure~\ref{fig:sibsp-relationship-plot} indicates that the survival 
+rate of passenger is low if there are siblings.
+
+\subsubsection{Number of Parents/Children Aboard}
+This variable indicates the relationship of the passenger with other
+Passengers.Figure~\ref{fig:rel-relationship-plot} indicates that the survival 
+rate of passenger is low if there are relationshipship.
+
+\subsubsection{Fare} 
+Clearly, from the Figure~\ref{fig:fare-plot}, a big portion of passengers from
+lower \texttt{Fare} died.
+
+\subsubsection{Cabin}
+This variable indicates if the passenger on board had booked a cabin, he/she 
+has higher survival rate.
+<<cabin,echo=FALSE,warning=FALSE>>=
+Titanicc <- titanic
+CabinBi <- ifelse(Titanicc$Cabin == '', 0, 1)
+Titanicc <- Titanicc %>% mutate(Cabin = CabinBi)
+Titanicc$Cabin <- factor(Titanicc$Cabin)
+@
+
+\subsubsection{Embarked}
+There are 3 ports of Embarkation C = Cherbourg, Q = Queenstowna and S = Southampton as shown in Figure~\ref{fig:embarked-relationship-plot}. Many passengers \texttt{Embarked} in Southampton and had low chances of survival. \\
+\\    
+The code for the graphs is in Page~\pageref{sec:pclass} to Page~\pageref{sec:embarked} .
+<<pclass-relationship-plot,fig.cap='Relationship between Pclass vs Survived',out.height='3in',out.width='4in',echo=FALSE,fig.align='center'>>=
+ggplot(data = titanic[1:891,], 
+       aes( x = factor(Pclass),fill = factor(Survived)))+
+  geom_bar(stat='count', position='dodge')+
+  theme(axis.text=element_text(size=12))+
+  labs(x="Pclass", 
+       y="Number of passengers") 
+@
+
+<<sex-relationship-plot,fig.cap='Relationship between Sex vs Survived',out.height='3in',out.width='4in',echo=FALSE,fig.align='center'>>=
+ggplot(data = titanic[1:891,], 
+       aes( x = factor(Sex),fill = factor(Survived)))+
+  geom_bar(stat='count', position='dodge') +
+  theme(axis.text=element_text(size=12))+
+  labs(x="Sex", 
+       y="Number of passengers") 
+@
+
+<<age-relationship-plot,fig.cap='Relationship between Age vs Survived',out.height='3in',out.width='4in',echo=FALSE,warning=FALSE,fig.align='center'>>=
+df <- titanic
+d <- df %>% dplyr::select(Age, Survived) %>% filter(!is.na(Age))
+ggplot(d,
+       aes(Age,fill = factor(Survived))) +
+  stat_count(width = 0.5) +
+  theme_classic()+
+  theme(axis.text=element_text(size=12)) +
+  labs(x="Age", 
+       y="Number of passengers") 
+@
+
+<<sibsp-relationship-plot,fig.cap='Relationship between SibSp vs Survived',out.height='3in',out.width='4in',echo=FALSE,fig.align='center'>>=
+ggplot(data = titanic[1:891,], 
+       aes( x = factor(SibSp),fill = factor(Survived)))+
+  geom_bar(stat='count', position='dodge') +
+  theme(axis.text=element_text(size=12)) +
+  labs(x="SibSp", 
+       y="Number of passengers") 
+@
+
+<<rel-relationship-plot,fig.cap='Relationship between Parch vs Survived',out.height='3in',out.width='4in',echo=FALSE,fig.align='center'>>=
+ggplot(data = titanic[1:891,], 
+       aes( x = factor(Parch),fill = factor(Survived)))+
+  geom_bar(stat='count', position='dodge') +
+  theme(axis.text=element_text(size=14)) + 
+  labs(x="Parch", 
+       y="Number of passengers") 
+@
+
+<<fare-plot,fig.cap='Relationship between Fare vs Survived',out.height='3in',echo=FALSE,out.width='4in',warning=FALSE,fig.align='center'>>=
+ggplot(titanic[1:891,], 
+       aes(Fare,fill = factor(Survived))) + 
+  stat_count(width = 0.5) + 
+  theme_classic() +
+  xlim(0,275) +
+  theme(axis.text=element_text(size=12)) + 
+  labs(x="Fare", 
+       y="Number of passengers") 
+@    
+
+<<cabin-plot,fig.cap='Relationship between Cabin vs Survived',out.height='3in',echo=FALSE,out.width='4in',warning=FALSE,fig.align='center'>>=
+ggplot(data = Titanicc[1:891,], 
+       aes( x = factor(Cabin),fill = factor(Survived)))+
+  geom_bar(stat='count', position='dodge') +
+  theme(axis.text=element_text(size=14)) +
+  labs(x="Cabin", 
+       y="Number of passengers") 
+@  
+
+
+<<embarked-relationship-plot,fig.cap='Relationship between Embarked vs Survived',out.height='3in',out.width='4in',echo=FALSE,fig.align='center'>>=
+TitanicData <- titanic
+TitanicData[c(62, 830), "Embarked"] <- "S"
+ggplot(data = TitanicData[1:891,], 
+       aes( x = factor(Embarked),fill = factor(Survived)))+
+  geom_bar(stat='count', position='dodge') +
+  labs(x="Embarked", 
+       y="Number of passengers") 
+@
+\clearpage
+\section{Data Cleaning}
+\subsection{Missing Values}
+The scatterplot matrix shown in Figure~\ref{fig:missingvalues-plot} gives us information about the missing values in the dataset in proportions.
+We can see that there are \Sexpr{sum(is.na(titanic[['Age']]))} passengers whose
+\texttt{Age} is not specified. It is also evident that \texttt{Cabin} of 
+\Sexpr{sum(titanic[['Cabin']] == '')} passengers is not giving, indicating that
+they didnot book a cabin. Also \Sexpr{sum(titanic[['Embarked']] == '')} values of 
+\texttt{Embarked} are missing.\\
+
+<<missingvalues-plot, fig.pos='h',fig.cap='Graph of missing data',echo=FALSE,results='hide',out.height='3in'>>=
+df <- titanic
+df$Survived <- factor(df$Survived)
+df$Sex <- factor(df$Sex)
+df$Pclass <- factor(df$Pclass)
+df$Embarked <- factor(df$Embarked)
+is.na(df$Embarked[df$Embarked =='']) <- TRUE
+is.na(df$Cabin[df$Cabin =='']) <- TRUE
+NAPlot <- aggr(df, col=c('navyblue','red'),
+               sortVars=TRUE,
+               labels=names(data), cex.axis=.7, gap=3,
+               ylab=c("Histogram of missing data(%)","Pattern"),ylim=1)
+@
+
+<<missingvalues-table,echo=FALSE>>=
+NAPlot
+@
+Page~\pageref{sec:imputation} has the code.
+
+\subsection{Impution of Values}
+<<reinitialization,echo=FALSE>>=
+titanic$Survived <- factor(titanic$Survived)
+titanic$Sex <- factor(titanic$Sex)
+titanic$Pclass <- factor(titanic$Pclass)
+titanic$Embarked <- factor(titanic$Embarked)
+@
+
+Since \texttt{Age} is a continuous variable we used prediction to find the missing values.We
+made a prediction of an individual passenger's \texttt{Age} using the other variables with ANOVA.
+<<age-imputation,echo=FALSE,results='hide'>>=
+predicted_age <- rpart(Age ~ Pclass + Sex + SibSp + Parch + Fare + 
+                         Embarked + Survived,
+                       data = titanic[!is.na(titanic$Age),],    
+                       method = "anova")
+titanic$Age[is.na(titanic$Age)] <- predict(predicted_age, 
+                                           titanic[is.na(titanic$Age), ])
+@ 
+
+The mode of \texttt{Embarked} Column was Port S indicating that it was most common among 
+the passengers. Therefore we imputed the missing value with Port S ,assuming 
+these two passengers \texttt{Embarked} at S
+<<embarked-imputation,echo=FALSE,results='hide'>>=
+titanic[c(62, 830), "Embarked"] <- "S"
+titanic$Embarked<-as.factor(as.character(titanic$Embarked))
+@
+
+We assumed that the empty values in \texttt{Cabin} were for passengers who did not book a cabin.
+Hence we converted the \texttt{Cabin} variable into a factor as person with cabin = 1 and Person
+without cabin = 0
+<<cabin-imputation,echo=FALSE,results='hide'>>=
+CabinBi <- ifelse(titanic$Cabin == '', 0, 1)
+titanic <- titanic %>% mutate(Cabin = CabinBi)
+titanic$Cabin <- factor(titanic$Cabin)
+@
+
+After imputation of missing data, we have the following results.\\
+<<after-imputation>>=
+summary(titanic$Age)
+levels(titanic$Embarked)
+levels(titanic$Cabin)
+@
+Page~\pageref{sec:imputation} has the code.
+
+\subsection{Variables Transformation}
+The conversion of features into factors has a great advantage in predicting
+the response \texttt{Survived}. \\
+We divided the \texttt{Age} into 5 categories.
+<<age-transformtion,echo=FALSE,results='hide'>>=
+titanic$Agegroup[titanic$Age < 18] <- 1
+titanic$Agegroup[titanic$Age >= 18 & titanic$Age < 25] <- 2
+titanic$Agegroup[titanic$Age >= 25 & titanic$Age < 40] <- 3
+titanic$Agegroup[titanic$Age >= 40 & titanic$Age < 60] <- 4
+titanic$Agegroup[titanic$Age >= 60] <- 5
+titanic$Agegroup <- factor(titanic$Agegroup)
+@
+
+<<age-levels,echo=FALSE>>=
+levels(titanic$Agegroup)
+@
+
+We broke down the \texttt{Name} to extract the \texttt{Title} information of the passengers.
+There are 17 titles gives to the passengers. We converted into factor with 5 levels.
+Titles with very low cell counts were combined to "rare" level.
+<<title,echo=FALSE,results='hide'>>=
+titanic$Title <- gsub('(.*, )|(\\..*)', '', titanic$Name)
+table(titanic$Sex, titanic$Title)
+@
+
+<<title-transformtion,echo=FALSE,results='hide'>>=
+rare <- c('Capt','Col','Don','Dr','Jonkheer','Lady','Major','Rev',
+          'Sir','the Countess')
+titanic$Title[titanic$Title %in% rare]  <- 'Rare'
+titanic$Title[titanic$Title == 'Mlle']  <- 'Miss' 
+titanic$Title[titanic$Title == 'Ms']    <- 'Miss'
+titanic$Title[titanic$Title == 'Mme']   <- 'Mrs' 
+titanic$Title <- factor(titanic$Title)
+@
+
+<<title-levels,echo=FALSE>>=
+levels(titanic$Title)
+@
+
+It is evident there there is similar pattern in the survival for \texttt{Parch} and \texttt{}We created a new variable \texttt{FamilySize} with \texttt{SibSp} and \texttt{Parch}
+
+<<familySize-Creation,echo=FALSE,results='hide'>>=
+titanic['FamilySize'] = titanic['Parch']+titanic['SibSp'] 
+@
+
+<<familySize-levels,echo=FALSE>>=
+summary(titanic$FamilySize)
+@
+
+We converted Fare into a Factor with 4 levels
+<<fare-transformtion,echo=FALSE,results='hide'>>=
+titanic$FareBand[titanic$Fare < 10] <- 1
+titanic$FareBand[titanic$Fare < 50 & titanic$Fare >= 10] <- 2
+titanic$FareBand[titanic$Fare <= 100 & titanic$Fare >= 50] <- 3
+titanic$FareBand[titanic$Fare > 100] <- 4
+titanic$FareBand <- factor(titanic$FareBand)
+@
+
+<<FareBand-levels,echo=FALSE>>=
+levels(titanic$FareBand)
+@
+Page~\pageref{sec:transformation} has the code.
+
+\subsubsection{Data for modelling}
+For this analysis, we have split our cleaned and transformed data into 70\% for training, and 30\% for testing. The code is present in Page~\pageref{sec:Break-file}. The data is split randomly using a shuffler. Each classifier was trained on the training data.  We are also using  a 3-fold validation to get an estimate on how our classifier would perform on the unseen data. Finally, we use our test data which is unseen by  the classifier and determine the accuracy obtained on this test data. The goal is to predict as accurately as possible.\\
+We referred An Introduction to Statistical Learning with applications in R[\cite{James:et:al:2014}] and The Not so Short Introduction to Latex[\cite{Oetiker:et:al:2007}].\\
+After cleaning we have the following
+<<dataframe-table-cleaned,echo=FALSE>>=
+VariableName = c('Survived','Pclass','Sex','Cabin','Embarked','Title','Agegroup',
+                 'FamilySize','FareBand')
+ClassType = c('factor','factor','factor',
+              'factor','factor','factor','factor','integer','factor')
+Levels=c(2,3,2,2,3,5,5,'',4)
+dff <- data.frame(VariableName,ClassType,Levels)
+@
+
+<<data-variablesz>>=
+dff
+@
+
+
+<<data-set,echo=FALSE,result='hide'>>=
+Titanic = subset(titanic, select = -c(PassengerId,Age,SibSp,Parch,Ticket,Fare))
+@
+
+<<partition-data,echo=FALSE,result='hide'>>=
+set.seed(185)
+n <- nrow(Titanic)
+shuffled_Titanic <- Titanic[sample(n), ]
+train_indices <- 1:round(0.7 * n)
+train <- shuffled_Titanic[train_indices, ]
+test_indices <- (round(0.7 * n) + 1):n
+test <- shuffled_Titanic[test_indices, ]
+ntest <- nrow(test)
+ntrain <- nrow(train)
+@
+\clearpage
+
+\section{Analysis}
+\subsection{Logistic Regression}
+In this analysis, our goal is to classify if a person survived given other 
+variables. Since response variable is categorical,this is a classification 
+problem. We are modelling number of success vs failures[1,0]. This data given 
+follows a binomial distribution. Logistic regression classifier models the log 
+odds(logit) of Survival as a linear combination of predictors. This is achieved 
+by specifying link as logit in the model.
+
+\subsubsection{Model Selection}
+Logistic regression performs best when there is no multicollinearity. Adding 
+terms that are explaining the same variablity that is already described by a 
+predictor results in greater test and training errors. To identify, which predictors
+describe the model best, we use forward selection. Model with all the predictors. 
+Maximum number of predictors we can have.
+
+<<log-reg,results='hide',echo=FALSE,warning=FALSE>>=
+saturated_model = glm(Survived ~ Pclass + Sex + Embarked + Agegroup + Title + 
+                        FamilySize + FareBand + Pclass:FareBand + 
+                        Embarked:Pclass + Pclass:Sex + Pclass:Agegroup + 
+                        Pclass:Title, family = binomial(link = 'logit'), 
+                      data = train)
+reg.model = glm(factor(Survived) ~ Pclass,family = binomial(link = 'logit'), 
+                data = train)
+step(reg.model, direction="forward",scope=formula(saturated_model))
+# %     # Cross validation for Logistic regression
+# % train_control_lda = trainControl(method="cv", number=3)
+# % model_lr <- train(Survived~ Pclass + Title + FamilySize +FareBand+ Sex+
+# %                   Pclass:Title+Pclass:FareBand,  data=train, method="glm", family="binomial")
+# % acc_lr = sum(model_lr$results[,2])/length(model_lr$results[,2])
+@
+
+The stepwise selection function step() in R, adds the variables one by one, till
+adding any new parameter decreases the performance. We have identified this
+factor(Survived) ~ Pclass + Title + FamilySize + Pclass:Title as the best model 
+with 501.5797 as residual deviance on 520 degrees of freedom. We can confirm this is
+a good model based on chi-square test. Page~\pageref{sec:Best-model} has the code.
+
+<<classification-rate,echo=FALSE,result='hide'>>=
+ClassificationRate <- function( tab ) {
+  return ((tab[1,1] + tab[2,2]) / sum( tab ))
+}
+@
+
+<<logistic-regression,echo=FALSE,results='hide',warning=FALSE>>=
+best.model = glm(factor(Survived) ~ Pclass + Title + FamilySize + Pclass:Title, 
+                 family = binomial(link = 'logit'), data = train)
+modelpred=best.model$deviance
+summary(best.model)
+probabilities_train<-predict(best.model,newdata = train, type = "response")
+prediction_train = ifelse(probabilities_train > 0.55, 1, 0)
+train_table=table(prediction_train,train$Survived)
+l_train_rate = ClassificationRate(train_table)
+probabilities<-predict(best.model,newdata = test, type = "response")
+predicted = ifelse(probabilities > 0.55, 1, 0)
+@
+
+<<out1>>=
+best.model$deviance
+qchisq(0.95,520)
+@
+
+<<chi-square-selection,echo=FALSE,result='hide'>>=
+qvalue = qchisq(0.95,520)
+@
+
+\Sexpr{qvalue} \textgreater \Sexpr{modelpred} This model is a good fit.
+
+\subsubsection{Prediction}
+<<lr-confusion-matrix,echo=FALSE>>=
+actual = test$Survived
+outtable=table(predicted,actual)
+outtable
+lrate = ClassificationRate(outtable)
+@
+
+We are getting \Sexpr{lrate*100} \% accuracy on test data. The prediction 
+accuracy is not bad, but could be better.Let's consider more classifiers.\\
+Page~\pageref{sec:Logistic} has the code. Warnings suggesting multi-collinearity and perfect 
+group seperation was given by glm model. Hence, we are procceding to linear discriminant analysis which
+does not have any issue with perfect group seperation.
+
+\subsection{Linear Discriminant Analysis}
+Linear discriminant classifer is more stable than logistic regression, if the 
+groups are well seperated. In Linear discriminant analysis, we find a classifier
+that given prior probabilites of the observations estimates the posterior probability
+of a observation belonging to a particular group.
+\\
+We are testing if our classifier is able to classify the training data into Survived
+and Non-Survived groups appropriately using cross-validation to avoid overfitting.
+
+<<asas,echo=FALSE,result='hide'>>=
+train_control_lda = trainControl(method="cv", number=3)
+
+model_lda = train(Survived ~ Pclass + Sex + Cabin + Embarked + Agegroup + 
+                    Title + FamilySize + FareBand, data = train, trControl=train_control_lda, method="lda")
+acc_lda = sum(model_lda$results[,2])/length(model_lda$results[,2])
+nooffold = ntrain/ntest
+@
+
+We are analyzing the performance of our LDA classifier using 3-fold validation. We have chosen
+3 as the value,as our ratio of training to test dataset size is \Sexpr{nooffold}. These number of folds will approximate our test data well. \Sexpr{acc_lda*100}\% is the estimated accuracy of our LDA classifier on unseen data.
+
+\subsubsection{Prediction}
+Linear discrimamant analysis is able to find a linear classifer that best seperates
+the groups as function of the linear combination of the predictors. 
+<<ld,echo=FALSE,result='hide'>>=
+lda_output = lda(Survived ~ Pclass + Sex + Cabin + Embarked + Agegroup + 
+                   Title + FamilySize + FareBand, data = train)
+predicted = predict(lda_output, test)$class
+actual = test$Survived
+confusion_matrix_lda=table(predicted,actual)
+lda_prediction_rate = ClassificationRate(confusion_matrix_lda)
+@
+
+<<ld-prediction-rate>>=
+confusion_matrix_lda
+lda_prediction_rate
+@
+We are able to classify \Sexpr{lda_prediction_rate*100}\% of the unseen data accurately. \\
+Page~\pageref{sec:Lda} has the code.
+
+\subsection{Support Vector Machines}
+
+\subsubsection{Support Vector Classifier}
+A support vector classifier is a technique which allows us to find a hyperplane,
+that seperates the observations into 2 groups, but also allows us to control the
+number of violations. SVC approach is very robust to variance, the 
+hyperplane only depends on the support vectors and does not depend on all the
+observations that lie far from the margin unlike LDA and Logistic regression. 
+
+We are selecting a tuning parameter for our SVC model with cross-validation approach.
+<<tuning-svc,fig.pos='h',fig.cap='Tuning parameter vs Training Error',fig.align='center',out.height='3in',out.width='4in',echo=FALSE>>=
+# Tuning SVM to get best model.
+Ranges = list(cost = c(0.1,1,5,10,15,20))
+sub = subset(train, select = -c(Name))
+set.seed (1)
+tune.out = tune(svm, Survived ~ .,data = sub, kernel = "linear", ranges = Ranges)
+plot(tune.out$performances[,1],tune.out$performances[,2] , main="C parameter vs Training Error", cex = 0.6, col="darkred",pch=16, type="b",xlab = "C parameter", ylab = "Cross validation error", col.main = "darkred", col.lab ="darkred")
+@
+
+We initally check SVC against a range of values 0.01, 1, 5,10, 20. From the Figure~\ref{fig:tuning-svc} it is clear that the training error is minimal when cost = 10.
+<<bestsel,echo=FALSE,results='hide'>>=
+bestModel = tune.out$best.model
+summary(bestModel)
+predictor = function(data = data, 
+                     cost = cost,
+                     kernel = kernel){
+  return(svm(Survived ~  Pclass + Sex + Embarked + Agegroup +Title + FamilySize + FareBand,
+             data = data, kernel = kernel, cost = cost))}
+@
+
+<<cv-svc,echo=FALSE,result='hide'>>=
+train_control_svm = trainControl(method="cv", number=3)
+grid <- expand.grid(C = c(10))
+model_svm = train(Survived ~ Pclass + Sex + Cabin + Embarked + Agegroup + 
+                    Title + FamilySize + FareBand, data = train, 
+                  trControl=train_control_svm,
+                  method="svmLinear",tuneGrid=grid)
+acc_svc = sum(model_svm$results[,2])/length(model_svm$results[,2])
+@
+We are analyzing the performance of our SVC classifier using 3-fold validation. \Sexpr{acc_svc*100}\% is the estimated accuracy of our SVC model on unseen data.
+
+<<svc,echo=FALSE,results='hide'>>=
+svcFit <- predictor(data = sub, cost = 10, kernel = "linear")
+predicted=predict(svcFit, test)
+actual = test$Survived
+confusion_matrix_svc = table(predicted,actual)
+svc_prediction_rate = ClassificationRate(confusion_matrix_svc)
+@
+
+<<svc_output>>=
+confusion_matrix_svc
+svc_prediction_rate
+@
+We are able to classify \Sexpr{svc_prediction_rate*100}\% of the unseen data accurately. \\
+
+\subsubsection{Support Vector Machine}
+If the underlying data is not seperable by a linear hyperplane, we can fit 
+a non-linear support vector classifier.
+
+<<tuning-svm,fig.pos='h',fig.cap='Kernel Parameter vs Training error',out.height='3in',out.width='4in',echo=FALSE,fig.align='center'>>=
+predictor = function(data, cost = cost, gamma = gamma, kernel = kernel)
+{
+  return(svm(Survived ~  Pclass + Sex + Embarked + Agegroup +
+               Title + FamilySize + FareBand, 
+             data = data, kernel = kernel, cost = cost, gamma=gamma))
+}
+Ranges = list(gamma =c(1e-5,0.05,0.1,0.2,0.3,0.4,0.5,10,20), cost = c(1,5,10,15,20,25,30))
+set.seed (1)
+tune.out = tune(svm, Survived ~ . -Name, data = train, kernel = "radial", ranges = Ranges)
+best_cost = tune.out$best.model[[4]]
+best_gamma = tune.out$best.model[[6]]
+d= list(gamma =c(1e-5,0.05,0.1,0.2,0.3,0.4,0.5))
+for.plot = tune(svm, Survived ~ . -Name, data = train, kernel = "radial", ranges = d, cost = best_cost)
+plot(for.plot$performances[,1],for.plot$performances[,2]*100, main="Parameter tuning at cost=25", cex = 0.6, col="darkred",pch=16, type="b",
+     xlab = "gamma", ylab = "Cross validation error", col.main = "darkred", col.lab ="darkred")
+
+@
+
+The gamma value corresponds to the flexibility that is desired in the model. 
+A cross-validation approach to find best gamma value for support vector 
+machine suggests that the best gamma value to be used as 0.05 close to 0 in Figure~\ref{fig:tuning-svm}
+,indicates that the underlying data is indeed best seperated by a linear 
+hyperplane and adding more flexibility increases the error rate.
+\\
+Using the gamma value obtained by best radial model
+<<svm-pred,echo=FALSE>>=
+svcFit_kernel = svm(Survived ~  Pclass + Sex + Embarked + Agegroup +Title + FamilySize + FareBand,
+                    data = train, cost = best_cost, gamma=best_gamma,kernel = "radial")
+prediction<-predict(svcFit_kernel, test)
+actual = test$Survived
+confusion_matrix_svm = table(prediction,actual)
+svm_prediction_rate = ClassificationRate(confusion_matrix_svm)
+set.seed(1)
+train_control_svm_r = trainControl(method="cv", number=3)
+grid <- expand.grid(C = c(best_cost), sigma = c(best_gamma))
+model_svm_r = train(Survived ~ Pclass + Sex + Cabin + Embarked + Agegroup + 
+                      Title + FamilySize + FareBand, data = train, 
+                    trControl=train_control_svm_r,
+                    method="svmRadial",tuneGrid=grid)
+acc_svm = sum(model_svm_r$results[,3])/length(model_svm_r$results[,3])
+@
+We are analyzing the performance of our SVM classifier using 3-fold validation. \Sexpr{acc_svm*100}\% is the estimated accuracy of our SVM model on unseen data.
+
+<<svm-output>>=
+confusion_matrix_svm
+svm_prediction_rate
+best_cost
+best_gamma
+@
+We are able to classify \Sexpr{svm_prediction_rate*100}\% of the unseen data accurately. \\
+The classification rate achieved from SVM and SVC methods is approximately the same. \\
+Page~\pageref{sec:svm} has the code.
+
+\subsection{Decision Tree}
+Decision trees can be used for both regression and classification problems. 
+The tree we grow here is a classification tree. Any observation falling in
+a particular region of the tree is assigned to the most frequently occuring
+class in that region.
+
+<<decision-tree,echo=FALSE,results='hide'>>=
+descision_tree = tree( Survived ~ . -Name, data = train)
+summary(descision_tree)
+train_control_dtree = trainControl(method="cv", number=3)
+model_dtree <- train(Survived ~ . -Name, data = train, method = "rpart",
+                     trControl = train_control_dtree)
+acc_dtree = sum(model_dtree$results[,2])/length(model_dtree$results[,2])
+@
+
+<<decision-tree-plot,fig.cap='Decision Tree',out.height='3in',out.width='4in',echo=FALSE,fig.align='center'>>=
+plot(descision_tree, col = "grey", main = "Descision Tree")
+text(descision_tree, pretty = 1, col = "darkgreen" , cex = 0.9)
+title(main ="Decision Tree", col.main = "darkgreen")
+predicted = predict(descision_tree, test, type='class')
+actual = test$Survived
+confuion_tree_decision_tree=table(predicted,actual)
+decision_tree_rate = ClassificationRate(confuion_tree_decision_tree)
+@
+We are analyzing the performance of our Decision tree classifier using 3-fold validation. \Sexpr{acc_dtree*100}\% is the estimated accuracy of our decision tree model on unseen data.
+
+<<decision_tree_output>>=
+confuion_tree_decision_tree
+decision_tree_rate
+@
+
+Though, from the Figure~\ref{fig:decision-tree-plot} we can see that the first split is on title. All 
+observations with title Mr, Rare were on the left side of the tree and rest of
+the observations were assigned to right side.Similary, 5 other splits are 
+identified. In the left bottom split for Pclass, we can see that on either side
+of its branches we have '0', and bottom right Agegroup has 1,1 split. These split was unecessary if we consider classfication rate. However, this split increases the gini index by improving node purity, and
+hence the split is present.\\
+We are able to classify \Sexpr{decision_tree_rate*100}\% of the unseen data accurately. \\
+Page~\pageref{sec:decision-tree} has the code.
+
+\subsubsection{Cross-Validation and Pruning}
+A smaller tree with fewer nodes improves interpretability of the model and
+avoids overfitting by reducing variance. Using Cross-validation we can find the
+optimal size of the tree.
+<<cv,echo=FALSE,results='hide'>>=
+cv.train <- cv.tree( descision_tree, FUN = prune.misclass )
+par( mfrow = c( 1,2 ) )
+cv.errors <- cv.train$dev
+cv.sizes <- cv.train$size
+cv.alphas <- cv.train$k
+@
+
+<<sizecv,echo=FALSE,fig.cap='Optimal tree size',fig.pos='h',out.height='3in',out.width='5in',fig.align='center',fig.sep=c('')>>=
+par(mfrow = c(1,2))
+plot( cv.sizes, cv.errors, 
+      type = "b", 
+      pch = 16, 
+      col = "darkred", 
+      main = "Size VS Cross Validation Error",
+      xlab = "Sizes", ylab="Errors" )
+plot( cv.alphas, cv.errors, 
+      type = "b", pch=16,
+      col = "darkred", 
+      main = "Alpha vs Error",
+      xlab = "Alpha", ylab="Errors")
+@
+
+From the Figure~\ref{fig:sizecv} we can see that the error is minimal when tree size is 4. 
+4 is the optimal size for our tree.\\
+Page~\pageref{sec:prune-plot} has the code.
+<<prune-tree,echo=FALSE>>=
+par(mfrow = c(1,1))
+cv.optimal.index= which.min( cv.errors )
+cv.optimal.size <- cv.sizes[cv.optimal.index]
+prune.train = prune.misclass( descision_tree, best = 4 )
+predicted <- predict( prune.train, test, type = "class" ) 
+actual = test$Survived
+# Cross-validation of pruned tree.
+cv_classification_rate = predict( prune.train, train, type = "class" ) 
+error = ClassificationRate(table(cv_classification_rate, train$Survived))
+confusion_matrix_prune_tree = table(predicted,actual)
+prune_tree_rate = ClassificationRate(confusion_matrix_prune_tree)
+@
+
+<<pruned-tree-plot,echo=FALSE,fig.cap='Pruned Decision Tree',out.height='3in',out.width='4in',fig.align='center'>>=
+plot(prune.train, col = "green" )
+text(prune.train, pretty = 1, col = "darkgreen" , cex = 0.9)
+title(main = " Pruned Decision Tree", col.main = "darkgreen")
+@
+
+<<cvprune,results='hide',echo=FALSE>>=
+cv_classification_rate = predict( prune.train, train, type = "class" ) 
+acc_ptree = ClassificationRate(table(cv_classification_rate, train$Survived))
+@
+
+<<pruned-tree-output>>=
+confusion_matrix_prune_tree
+prune_tree_rate
+@
+
+After pruning, our classification rate remians the same but, the
+real gain here is the low cost complexity,the tree is much smaller than the original, has
+lower variance and is able to give better results with fewer splits.\\
+We are able to classify \Sexpr{prune_tree_rate*100}\% of the unseen data accurately. \\
+Page~\pageref{sec:prune} has the code.
+
+\subsection{Random Forest}
+The single tree models are high in variance. Many methods like bagging, random
+forests overcome this disadvantage by growing many trees, obtaining prediction
+from each tree and considering majority vote as the prediction of that observation.
+\\
+Random forests have an advantage over bagging, because it decorrelates the 
+trees, by applying restriction on the predictors that can be chosen for 
+splitting while creating the tree and hence we choose random forests for our
+prediction. This ensures there is no overfitting.
+
+<<randfor,echo=FALSE,results='hide'>>=
+set.seed(1)
+glm3 <- randomForest(as.factor(Survived) ~ Pclass + Sex + Cabin + Embarked 
+                     + Agegroup + Title + FamilySize + FareBand, 
+                     data=train, importance=TRUE,ntree=1150, mtry=3)
+predicted <- predict(glm3, test)
+actual = test$Survived
+confusion_matrix_random_forest <- table(predicted, actual)
+random_forest_rate = ClassificationRate(confusion_matrix_random_forest)
+par(mfrow = c(1,1))
+@
+
+<<plot-1,fig.cap='Model Error',out.height='4in',out.width='5in',echo=FALSE,fig.align='center'>>=
+plot(glm3,main='Model Error')
+legend('topright', colnames(glm3$err.rate), col=1:3, fill=1:3)
+@
+Figure~\ref{fig:plot-1} shows the model error rate.The black line shows the overall error rate which is around 20\%. The red and green lines show the error rate for 'died' and 'survived' respectively. We can see that right now we're much more successful predicting death than we are survival which is also visible from the confusion matrix
+<<plot-2,fig.cap='Variable Importance chart',out.height='3in',out.width='4in',echo=FALSE,fig.align='center'>>=
+varImpPlot(glm3,pch = 16, lty = 1,col = "darkred", main = "Variable Importance chart", 
+           col.main="darkred", col.lab="darkred", cex.lab = 0.8, type=1)
+@
+
+<<ouberror,results='hide',echo=FALSE>>=
+out_of_bag_error = 1 - sum(glm3$err.rate[,1])/length(glm3$err.rate[,1])
+@
+
+Out of bag error estimate is observed as \Sexpr{out_of_bag_error*100}\% for our random forest classifier. This serves as a measure of performance metric of our classifier on the unseen data.
+
+<<rand-forest-predict>>=
+confusion_matrix_random_forest
+random_forest_rate
+@
+Figure~\ref{fig:plot-2} explains the important variables.By default, the 
+randomforest function assumes sqrt(p) variables when building random forests
+for classification problems. Hence here number of predictors considered for each tree = sqrt(8)=2.828 = 3. The prediction accuracy obtained by this method is the best so far.\\
+We are able to classify \Sexpr{random_forest_rate*100}\% of the unseen data accurately. \\
+Page~\pageref{sec:random-forest} has the code.
+
+<<finaloutputfile,echo=FALSE>>=
+submit <- data.frame(Name = test$Name, Survived = predicted)
+write.csv(submit, file = outpath, row.names = FALSE)
+@
+
+\section{Results}
+
+Logistic regression gives an accuracy of \Sexpr{lrate*100}\% on our data using least squares approach. However, due to perfect group seperation warnings, this prediction rate may not be accurate.\\
+Linear discriminant analysis is another popular classification technique and works by maximizing the difference between 2 groups. When we fit this classifier to our data, we observe \Sexpr{lda_prediction_rate*100}\% in performance on the test data. \\ 
+Support vector classifier gives the flexibility to control the number of violations, using cross-validation we found best parameters for cost function. The  SVC model is just a special case of SVM when gamma = 25, using cross validation approach we find the best combination of gamma and cost parameter to improve the classification rate.\\
+We can observe that the decision tree and pruned decision tree are giving the same prediction rate, this is a good result as our pruned tree is able to generalize just as well as the full length tree.\\
+Random forests are taking voting from 1150 trees constructed using 3 predictors, and as expected has slightly improved the performance. We chose this model to be the best model.The final prediction from random forest is saved in /data/processed.\\
+We see a very unusual pattern, where our cross-validation error is always lower than test error rate. Possible reasons:\\
+Our test dataset has not captured the properties of entire dataset and much easier to predict, whereas our training dataset has all the hard to predict observations.\\
+Our classifiers are very good at generalizing.
+\begin{table}[ht]
+\begin{center}
+\begin{tabular}{| c |c | c |}
+\hline
+\textbf{Method} & \textbf{Cross Validation Accuracy} & \textbf{Test Accuracy} \\
+\hline
+Logistic Regression & \Sexpr{l_train_rate*100} &	\Sexpr{lrate*100}\\
+\hline
+Linear Discriminant Analysis & \Sexpr{acc_lda *100} &	\Sexpr{lda_prediction_rate*100}\\
+\hline
+Support Vector Classifier & \Sexpr{acc_svc *100} & \Sexpr{svc_prediction_rate*100}\\
+\hline
+Support Vector Machines   & \Sexpr{acc_svm *100} &	\Sexpr{svm_prediction_rate*100}\\
+\hline
+Decision Tree & \Sexpr{acc_dtree *100} &	\Sexpr{decision_tree_rate*100}\\
+\hline
+PrunedDecision Tree & \Sexpr{error *100} &	\Sexpr{prune_tree_rate*100}\\
+\hline
+Random Forest	& \Sexpr{out_of_bag_error*100} & \Sexpr{random_forest_rate*100}\\
+\hline
+\end{tabular}
+\end{center}
+\caption{Results}
+\label{tab:tab2}
+\end{table}
+
+\addcontentsline{toc}{section}{References}
+\printbibliography
+
+\begin{appendices}
+\section{Libraries}
+
+\label{sec:libraries}
+<<setup-knitr-code,eval=FALSE>>=
+# Required Libraries
+library(knitr)
+library(mice)
+library(VIM)
+library(randomForest)
+library(dplyr)
+library(ggvis)
+library(ggplot2)
+library(ggthemes)
+library(rpart)
+library(rpart.plot)
+library(MASS)
+library( e1071 )
+library(tidyverse)
+library(tree)
+library(ISLR)
+@
+
+\label{sec:loadcsv}
+<<define-path-code,eval=FALSE>>=
+# Loading Files
+data_dir <- file.path('.', 'data')
+outpath <- file.path(data_dir, 'processed', 'Titanic.csv')
+csvpath <- file.path(data_dir, 'external', 'train.csv')
+titanic <- read.csv(csvpath, header=TRUE,stringsAsFactors=FALSE)
+@ 
+
+\section{Exploratory Data Analysis}
+\label{sec:pclass}
+
+<<pclass-relationship-plot-code,eval=FALSE>>=
+# Plot indicating relationship of Pclass with Survived
+ggplot(data = titanic[1:891,], 
+       aes( x = factor(Pclass),
+            fill = factor(Survived)))+
+  geom_bar(stat='count', position='dodge') +
+  theme(axis.text=element_text(size=12))+
+  labs(title="Survivors by Passenger Class", 
+       x="Pclass", 
+       y="Number of passengers") 
+@ 
+
+<<titles-code,eval=FALSE>>=
+# Extracting Titles from Names
+titanic$Title <- gsub('(.*, )|(\\..*)', '', titanic$Name)
+tab <- table(titanic$Sex, titanic$Title)
+titleCol <- ncol(tab)
+@
+
+<<sex-relationship-plot-code,eval=FALSE>>=
+# Plot indicating relationship of Sex with Survived
+ggplot(data = titanic[1:891,], 
+       aes( x = factor(Sex),fill = factor(Survived)))+
+  geom_bar(stat='count', position='dodge') +
+  theme(axis.text=element_text(size=12))
+@
+
+<<age-relationship-plot-code,eval=FALSE>>=
+# Plot indicating relationship of Age with Survived
+df <- titanic
+d <- df %>% dplyr::select(Age, Survived) %>% filter(!is.na(Age))
+ggplot(d,
+       aes(Age,fill = factor(Survived))) +
+  stat_count(width = 0.5) +
+  theme_classic()+
+  theme(axis.text=element_text(size=12))
+@
+
+<<sibsp-relationship-plot-code,eval=FALSE>>=
+# Plot indicating relationship of SibSp with Survived
+ggplot(data = titanic[1:891,], 
+       aes( x = factor(SibSp),fill = factor(Survived)))+
+  geom_bar(stat='count', position='dodge') +
+  theme(axis.text=element_text(size=12))
+@
+
+<<parch-relationship-plot-code,eval=FALSE>>=
+# Plot indicating relationship of Parch with Survived
+ggplot(data = titanic[1:891,], 
+       aes( x = factor(Parch),fill = factor(Survived)))+
+  geom_bar(stat='count', position='dodge') +
+  theme(axis.text=element_text(size=12))
+@
+
+<<fare-plot-code,eval=FALSE>>=
+# Plot indicating relationship of Fare with Survived
+ggplot(titanic[1:891,], 
+       aes(Fare,fill = factor(Survived))) + 
+  stat_count(width = 0.5) + 
+  theme_classic() +
+  xlim(0,275) +
+  theme(axis.text=element_text(size=12))
+@    
+
+<<cabin-code,eval=FALSE>>=
+# Plot indicating relationship of Cabin with Survived
+dd <- titanic %>% 
+  mutate(hascabin = Cabin != "") %>% 
+  group_by(hascabin, Survived) %>% 
+  summarise(n = n()) %>% 
+  mutate(survivalrate = n / sum(n)) %>% 
+  dplyr::select(hascabin, Survived, survivalrate) %>% 
+  spread(Survived, survivalrate)
+colnames(dd) <-  c('has cabin', 'died', 'survived')
+@
+
+\label{sec:embarked}
+<<embarked-relationship-plot-code,eval=FALSE>>=
+# Plot indicating relationship of Embarked with Survived
+ggplot(data = titanic[1:891,], 
+       aes( x = factor(Embarked),fill = factor(Survived)))+
+  geom_bar(stat='count', position='dodge') 
+@
+
+\section{Data Cleaning}
+\label{sec:missing-value}
+<<missingvalues-plot-code,eval=FALSE>>=
+# Plot indicating missing values
+df <- titanic
+df$Survived <- factor(df$Survived)
+df$Sex <- factor(df$Sex)
+df$Pclass <- factor(df$Pclass)
+df$Embarked <- factor(df$Embarked)
+is.na(df$Embarked[df$Embarked =='']) <- TRUE
+is.na(df$Cabin[df$Cabin =='']) <- TRUE
+NAPlot <- aggr(df, col=c('navyblue','red'),
+               sortVars=TRUE,
+               labels=names(data), cex.axis=.7, gap=3,
+               ylab=c("Histogram of missing data(%)","Pattern"),ylim=1)
+@
+
+\label{sec:imputation}
+<<age-imputation-code,eval=FALSE>>=
+# Age Imputation
+predicted_age <- rpart(Age ~ Pclass + Sex + SibSp + Parch + Fare + 
+                         Embarked + Survived,
+                       data = titanic[!is.na(titanic$Age),],    
+                       method = "anova")
+titanic$Age[is.na(titanic$Age)] <- predict(predicted_age, 
+                                           titanic[is.na(titanic$Age), ])
+@ 
+
+<<embarked-imputation-code,eval=FALSE>>=
+# Embark Imputation
+titanic[c(62, 830), "Embarked"] <- "S"
+titanic$Embarked<-as.factor(as.character(titanic$Embarked))
+@
+
+<<cabin-imputation-code,eval=FALSE>>=
+# Cabin Imputation
+CabinBi <- ifelse(titanic$Cabin == '', 0, 1)
+titanic <- titanic %>% mutate(Cabin = CabinBi)
+titanic$Cabin <- factor(titanic$Cabin)
+@
+
+\label{sec:transformation}    
+<<age-transformtion-code,eval=FALSE>>=
+# Age transformation
+titanic$Agegroup[titanic$Age < 18] <- 1
+titanic$Agegroup[titanic$Age >= 18 & titanic$Age < 25] <- 2
+titanic$Agegroup[titanic$Age >= 25 & titanic$Age < 40] <- 3
+titanic$Agegroup[titanic$Age >= 40 & titanic$Age < 60] <- 4
+titanic$Agegroup[titanic$Age >= 60] <- 5
+titanic$Agegroup <- factor(titanic$Agegroup)
+@
+
+<<title-code,eval=FALSE>>=
+# Title transformation
+titanic$Title <- gsub('(.*, )|(\\..*)', '', titanic$Name)
+table(titanic$Sex, titanic$Title)
+rare <- c('Capt','Col','Don','Dr','Jonkheer','Lady','Major','Rev',
+          'Sir','the Countess')
+titanic$Title[titanic$Title %in% rare]  <- 'Rare'
+titanic$Title[titanic$Title == 'Mlle']  <- 'Miss' 
+titanic$Title[titanic$Title == 'Ms']    <- 'Miss'
+titanic$Title[titanic$Title == 'Mme']   <- 'Mrs' 
+titanic$Title <- factor(titanic$Title)
+@
+
+<<fare-transformtion-code,eval=FALSE>>=
+# Fare transformation
+titanic$FareBand[titanic$Fare < 10] <- 1
+titanic$FareBand[titanic$Fare < 50 & titanic$Fare >= 10] <- 2
+titanic$FareBand[titanic$Fare <= 100 & titanic$Fare >= 50] <- 3
+titanic$FareBand[titanic$Fare > 100] <- 4
+titanic$FareBand <- factor(titanic$FareBand)
+@
+
+<<classification-rate-code,echo=FALSE,result='hide'>>=
+# Function to calculate classification rate
+ClassificationRate <- function( tab ) {
+  return ((tab[1,1] + tab[2,2]) / sum( tab ))
+}
+@
+
+\label{sec:Break-file}
+<<file-input-code,eval=FALSE>>=
+Titanic = subset(titanic, select = -c(PassengerId,Age,SibSp,Parch,Ticket,Fare))
+set.seed(185)
+n <- nrow(Titanic)
+shuffled_Titanic <- Titanic[sample(n), ]
+train_indices <- 1:round(0.7 * n)
+train <- shuffled_Titanic[train_indices, ]
+test_indices <- (round(0.7 * n) + 1):n
+test <- shuffled_Titanic[test_indices, ]
+@
+
+\section{Analysis}
+\label{sec:Best-model}
+<<log-reg-code,eval=FALSE>>=
+# Selecting Best Model
+saturated_model = glm(Survived ~ Pclass + Sex + Embarked + Agegroup + 
+                        Title + FamilySize + FareBand + Pclass:FareBand + 
+                        Embarked:Pclass + Pclass:Sex + Pclass:Agegroup + 
+                        Pclass:Title, family = binomial(link = 'logit'), 
+                      data = train)
+reg.model = glm(factor(Survived) ~ Pclass,
+                family = binomial(link = 'logit'), 
+                data = train)
+step(reg.model, direction="forward",scope=formula(saturated_model))
+@
+
+\label{sec:Logistic}
+<<logistic-regression-code,eval=FALSE>>=
+# Logistic Regression
+best.model = glm(factor(Survived) ~ Pclass + Title + FamilySize + 
+                   Pclass:Title, family = binomial(link = 'logit'), 
+                 data = train)
+modelpred=best.model$deviance
+summary(best.model)
+probabilities<-predict(best.model,newdata = test, type = "response")
+predicted = ifelse(probabilities > 0.5, 1, 0)
+@
+
+\label{sec:Lda}
+<<lda-code,eval=FALSE>>=
+# Linear Discriminate Analysis
+lda_output = lda(Survived ~ Pclass + Sex + Cabin + Embarked + Agegroup+ 
+                   Title + FamilySize + FareBand, data = train)
+predicted = predict(lda_output, test)$class
+train_control_lda = trainControl(method="cv", number=3)
+model_lda = train(Survived ~ Pclass + Sex + Cabin + Embarked 
+                  + Agegroup + Title + FamilySize + FareBand, 
+                  data = train, 
+                  trControl=train_control_lda, 
+                  method="lda")
+acc_lda = sum(model_lda$results[,2])/length(model_lda$results[,2])
+confusion_matrix_lda=table(test$Survived,predicted)
+lda_prediction_rate = ClassificationRate(confusion_matrix_lda)
+@
+
+\label{sec:svc}
+<<tuning-svc-code,eval = FALSE>>=
+# Tuning SVM to get best model.
+Ranges = list(cost = c(0.01, 1,5,10,20))
+DEFAULT_KERNEL = "linear"
+set.seed(415)
+sub = subset(train, select = -c(Name))
+tune.out = tune(svm, Survived ~ .,data = sub, kernel = "linear", 
+                ranges = Ranges)
+plot(tune.out, main="")
+title(main="Tuning parameter vs Training Error", col.main="darkblue")
+bestModel = tune.out$best.model
+summary(bestModel)
+predictor = function(data, cost = cost, kernel = kernel)
+{
+  return(svm(Survived ~  Pclass + Sex + Embarked + 
+               Agegroup +Title + FamilySize + FareBand,
+             data = data, kernel = kernel, cost = cost))
+}
+#cross validation
+train_control_svm = trainControl(method="cv", number=3)
+grid <- expand.grid(C = c(5))
+model_svm = train(Survived ~ Pclass + Sex + Cabin + Embarked + Agegroup + 
+                    Title + FamilySize + FareBand, data = train, 
+                  trControl=train_control_svm,
+                  method="svmLinear",tuneGrid=grid)
+acc_svc = sum(model_svm$results[,2])/length(model_svm$results[,2])
+# Prediction
+svcFit <- predictor(data = train, cost = 5, kernel = "linear")
+prediction<-predict(svcFit, test)
+confusion_matrix_svc = table(test$Survived,prediction)
+svc_prediction_rate = ClassificationRate(confusion_matrix_svc)
+@
+
+\label{sec:svm}
+<<tuning-svm-code,eval=FALSE>>=
+# Support Vector Machine
+predictor = function(data, cost = cost, gamma = gamma, 
+                     kernel = kernel)
+{
+  return(svm(Survived ~  Pclass + Sex + Embarked + Agegroup +
+               Title + FamilySize + FareBand, 
+             data = data, kernel = kernel, cost = cost, gamma=gamma))
+}
+Ranges = list(gamma = c(0.01,0.05,0.1,0.5,0.75,1))
+tune.out = tune(svm, Survived ~ . -Name, data = train, 
+                kernel = "radial",cost = 5, ranges = Ranges)
+plot(tune.out, main="")
+# cross valiadtion
+train_control_svm_r = trainControl(method="cv", number=3)
+grid <- expand.grid(C = c(5), sigma = c(0.05))
+model_svm_r = train(Survived ~ Pclass + Sex + Cabin + Embarked + Agegroup + 
+                      Title + FamilySize + FareBand, data = train, 
+                    trControl=train_control_svm_r,
+                    method="svmRadial",tuneGrid=grid)
+acc_svm = sum(model_svm$results[,2])/length(model_svm$results[,2])
+title("Kernel Parameter vs Training error", col.main = "darkblue")
+svcFit <- predictor(data = train, cost = 5, gamma = 0.05, 
+                    kernel = 'radial')
+prediction<-predict(svcFit, test)
+confusion_matrix_svm = table(test$Survived,prediction)
+svm_prediction_rate = ClassificationRate(confusion_matrix_svm)
+@
+
+\label{sec:decision-tree}
+<<decision-tree-code,eval=FALSE>>=
+# Decision Tree
+descision_tree = tree( Survived ~ . -Name, data = train)
+summary(descision_tree)
+plot(descision_tree, col = "grey", main = "Descision Tree")
+text(descision_tree, pretty = 1, col = "darkgreen" , cex = 0.9)
+title(main ="Decision Tree", col.main = "darkgreen")
+predicted = predict(descision_tree, test, type='class')
+confuion_tree_decision_tree=table(test$Survived,predicted)
+decision_tree_rate = ClassificationRate(confuion_tree_decision_tree)
+# cross validation
+descision_tree = tree( Survived ~ . -Name, data = train)
+summary(descision_tree)
+train_control_dtree = trainControl(method="cv", number=3)
+model_dtree<-train(Survived~.-Name,data=train,method="rpart",+
+                     trControl=train_control_dtree)
+acc_dtree = sum(model_dtree$results[,2])/length(model_dtree$results[,2])
+@
+
+\label{sec:prune-plot}
+<<size-cv-code,eval=FALSE>>=
+# Error Plots in Pruning
+par(mfrow = c(1,2))
+plot( cv.sizes, cv.errors, 
+      type = "b", 
+      pch = 16, 
+      col = "darkred", 
+      main = "Size VS CV Error",
+      xlab = "Sizes", ylab="Errors" )
+plot( cv.alphas, cv.errors, 
+      type = "b", pch=16,
+      col = "darkred", 
+      main = "Alpha vs Error",
+      xlab = "Alpha", ylab="Errors")
+@
+
+\label{sec:prune}
+<<prune-tree-code,eval=FALSE>>=
+# Pruning
+par(mfrow = c(1,1))
+cv.optimal.index= which.min( cv.errors )
+cv.optimal.size <- cv.sizes[cv.optimal.index]
+prune.train = prune.misclass( descision_tree, best = cv.optimal.size )
+pred <- predict( prune.train, test, type = "class" ) 
+confusion_matrix_prune_tree = table(test$Survived,pred)
+prune_tree_rate = ClassificationRate(confusion_matrix_prune_tree)
+plot(prune.train, col = "green" )
+text(prune.train, pretty = 1, col = "darkgreen" , cex = 0.9)
+title(main = " Pruned Decision Tree", col.main = "darkgreen")
+@
+
+\label{sec:random-forest}
+<<randfor-code,eval=FALSE>>=
+# Random FOrest
+glm3 <- randomForest(as.factor(Survived) ~ Pclass + Sex + Cabin + 
+                       Embarked + Agegroup + Title + FamilySize + FareBand, 
+                     data=train, importance=TRUE,ntree=1000)
+survivedPred <- predict(glm3, test)
+confusion_matrix_random_forest <- table(survivedPred, test$Survived)
+random_forest_rate = ClassificationRate(confusion_matrix_random_forest)
+par(mfrow = c(1,1))
+varImpPlot(glm3,pch = 16, lty = 1,col = "darkred", 
+           main = "Variable Importance chart", 
+           col.main="darkred", 
+           col.lab="darkred", 
+           cex.lab = 0.8)
+out_of_bag_error = 1 - sum(glm3$err.rate[,1])/length(glm3$err.rate[,1])
+@
+\section{Final Prediction}
+<<finaloutputfile-code,eval=FALSE>>=
+submit <- data.frame(PassengerId = test$Name, Survived = predicted)
+write.csv(submit, file = outpath, row.names = FALSE)
+@
+\end{appendices}
+\end{document}
